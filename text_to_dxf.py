@@ -769,7 +769,7 @@ def preview_paths(text_paths, surrounding_paths=None, preview=False, preview_fil
                 plt.plot(x, y, color='blue', linestyle='--', linewidth=1.0, label='Surrounding Shape')
     
     plt.axis('equal')
-    plt.title('Font Outline Preview')
+    plt.title('text_to_dxf preview')
     plt.xlabel('X')
     plt.ylabel('Y')
     plt.grid(True)
