@@ -508,7 +508,103 @@ def _get_kerning_adjustment(font, left_glyph, right_glyph, scale, verbose=False)
     return 0
 
 
-def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_quality=0.5, verbose=False, kerning=True):
+def generate_surrounding_shape(min_x, min_y, max_x, max_y, surround, padding, gap, corner_radius, verbose=False):
+    """
+    Generate paths for the surrounding shape.
+    """
+    paths = []
+    
+    if surround == 'none':
+        return paths
+
+    # Apply padding
+    min_x -= padding
+    min_y -= padding
+    max_x += padding
+    max_y += padding
+
+    if verbose:
+        print(f"Generating surrounding shape: {surround}")
+        print(f"Padding: {padding}, Gap: {gap}, Corner Radius: {corner_radius}")
+
+    def create_rounded_rect(min_x, min_y, max_x, max_y, radius):
+        """Create a single rounded rectangle path."""
+        if radius == 0:
+            # Simple rectangle
+            return [[(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y), (min_x, min_y)]]
+
+        # Ensure radius is not larger than half the shortest side
+        radius = min(radius, (max_x - min_x) / 2, (max_y - min_y) / 2)
+        if radius < 0: radius = 0 # Ensure non-negative radius
+
+        path = []
+        
+        # Start at the bottom-left straight line segment start
+        path.append((min_x + radius, min_y))
+
+        # Bottom line segment
+        path.append((max_x - radius, min_y))
+
+        # Bottom-right arc
+        path.extend(arc_points((max_x - radius, min_y + radius), radius, 270, 360))
+
+        # Right line segment
+        path.append((max_x, min_y + radius))
+        path.append((max_x, max_y - radius))
+
+        # Top-right arc
+        path.extend(arc_points((max_x - radius, max_y - radius), radius, 0, 90))
+
+        # Top line segment
+        path.append((max_x - radius, max_y))
+        path.append((min_x + radius, max_y))
+
+        # Top-left arc
+        path.extend(arc_points((min_x + radius, max_y - radius), radius, 90, 180))
+
+        # Left line segment
+        path.append((min_x, max_y - radius))
+        path.append((min_x, min_y + radius))
+
+        # Bottom-left arc
+        path.extend(arc_points((min_x + radius, min_y + radius), radius, 180, 270))
+
+        # Close the path by appending the first point
+        path.append(path[0])
+        return [path]
+
+    def arc_points(center, radius, start_angle, end_angle, segments=16, reverse=False):
+        """Generate points for an arc."""
+        points = []
+        if reverse:
+            start_angle, end_angle = end_angle, start_angle
+        
+        for i in range(segments + 1):
+            angle = math.radians(start_angle + (end_angle - start_angle) * i / segments)
+            x = center[0] + radius * math.cos(angle)
+            y = center[1] + radius * math.sin(angle)
+            points.append((x, y))
+        return points
+
+    if surround == 'rectangle' or surround == 'double_rectangle':
+        paths.extend(create_rounded_rect(min_x, min_y, max_x, max_y, corner_radius))
+
+    if surround == 'double_rectangle':
+        # Second rectangle with gap
+        min_x_inner = min_x + gap
+        min_y_inner = min_y + gap
+        max_x_inner = max_x - gap
+        max_y_inner = max_y - gap
+        
+        # Adjust corner radius for inner rectangle
+        inner_radius = max(0, corner_radius - gap)
+        
+        paths.extend(create_rounded_rect(min_x_inner, min_y_inner, max_x_inner, max_y_inner, inner_radius))
+
+    return paths
+
+
+def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_quality=0.5, verbose=False, kerning=True, surround='none', padding=5.0, gap=3.0, corner_radius=0.0):
     """
     Convert text to DXF outlines using the specified font.
     """
@@ -529,6 +625,7 @@ def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_q
     successful_chars = 0
     previous_glyph_name = None  # For kerning
     all_paths = []
+    surrounding_paths = []
 
     space_advance = 0
     try:
@@ -606,8 +703,33 @@ def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_q
     if verbose:
         print(f"Processed {successful_chars} characters successfully")
 
+    # After generating all text paths, calculate the bounding box
+    if all_paths and surround != 'none':
+        min_x, min_y = float('inf'), float('inf')
+        max_x, max_y = float('-inf'), float('-inf')
+        for path in all_paths:
+            for x, y in path:
+                min_x = min(min_x, x)
+                min_y = min(min_y, y)
+                max_x = max(max_x, x)
+                max_y = max(max_y, y)
+
+        if verbose:
+            print(f"Text bounding box: ({min_x:.2f}, {min_y:.2f}) to ({max_x:.2f}, {max_y:.2f})")
+
+        # Generate surrounding shape
+        surrounding_paths = generate_surrounding_shape(min_x, min_y, max_x, max_y, surround, padding, gap, corner_radius, verbose)
+        for path in surrounding_paths:
+            if len(path) > 1:
+                polyline = msp.add_lwpolyline(path, close=True)
+                polyline.dxf.layer = "SURROUND"
+
     try:
         if output_path:
+            # Add a new layer for the surrounding shape
+            if surround != 'none':
+                doc.layers.add("SURROUND", color=2)  # Yellow color
+            
             doc.saveas(output_path)
             print(f"DXF file saved successfully: {output_path}")
         if verbose:
@@ -624,10 +746,10 @@ def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_q
         font.close()
         if verbose:
             print("Font closed successfully")
-    return all_paths
+    return all_paths, surrounding_paths
 
 
-def preview_paths(paths, preview=False, preview_file=None):
+def preview_paths(text_paths, surrounding_paths=None, preview=False, preview_file=None):
     """
     Display or save a preview of the paths using matplotlib.
     """
@@ -635,16 +757,23 @@ def preview_paths(paths, preview=False, preview_file=None):
         return
 
     plt.figure()
-    for path in paths:
+    for path in text_paths:
         if len(path) > 1:
             x, y = zip(*path)
-            plt.plot(x, y, color='black')
+            plt.plot(x, y, color='black', linewidth=1.5, label='Text Outlines')
+
+    if surrounding_paths:
+        for path in surrounding_paths:
+            if len(path) > 1:
+                x, y = zip(*path)
+                plt.plot(x, y, color='blue', linestyle='--', linewidth=1.0, label='Surrounding Shape')
     
     plt.axis('equal')
     plt.title('Font Outline Preview')
     plt.xlabel('X')
     plt.ylabel('Y')
     plt.grid(True)
+    plt.legend()
 
     if preview_file:
         plt.savefig(preview_file)
@@ -678,6 +807,16 @@ def main():
                           help='Preview the generated paths using matplotlib')
     parser.add_argument('--preview-file', type=str,
                           help='Save the matplotlib preview to a file')
+
+    # Arguments for surrounding shape
+    parser.add_argument('--surround', type=str, choices=['none', 'rectangle', 'double_rectangle'], default='none',
+                       help='Surround the text with a shape (default: none)')
+    parser.add_argument('--padding', type=float, default=5.0,
+                       help='Padding between text and surrounding shape in mm (default: 5.0)')
+    parser.add_argument('--gap', type=float, default=3.0,
+                       help='Gap between double rectangles in mm (default: 3.0)')
+    parser.add_argument('--corner-radius', type=float, default=0.0,
+                       help='Corner radius for surrounding rectangles in mm (default: 0.0)')
     
     args = parser.parse_args()
     
@@ -721,9 +860,9 @@ def main():
     curve_quality = quality_map[args.quality]
     
     try:
-        all_paths = text_to_dxf(font_path, args.text, args.output, args.size, args.spacing, curve_quality, args.verbose, args.kerning)
+        all_paths, surrounding_paths = text_to_dxf(font_path, args.text, args.output, args.size, args.spacing, curve_quality, args.verbose, args.kerning, args.surround, args.padding, args.gap, args.corner_radius)
         if args.preview or args.preview_file:
-            preview_paths(all_paths, args.preview, args.preview_file)
+            preview_paths(all_paths, surrounding_paths, args.preview, args.preview_file)
     except Exception as e:
         import traceback
         print(f"Error: {e}")
