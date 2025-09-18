@@ -773,7 +773,6 @@ def preview_paths(text_paths, surrounding_paths=None, preview=False, preview_fil
     plt.xlabel('X')
     plt.ylabel('Y')
     plt.grid(True)
-    plt.legend()
 
     if preview_file:
         plt.savefig(preview_file)
