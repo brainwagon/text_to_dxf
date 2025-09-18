@@ -81,6 +81,28 @@ Kerning is enabled by default to ensure proper character spacing for fonts that 
 python text_to_dxf.py "AVATAR" avatar.dxf --font gunplay.ttf --no-kerning
 ```
 
+### Surrounding Text with Shapes
+
+You can add a surrounding rectangular shape around the text with customizable padding, gap, and corner radius.
+
+**Simple Rectangle:**
+
+```bash
+python text_to_dxf.py "Hello" output_rect.dxf --surround rectangle --padding 10 --corner-radius 5 --preview
+```
+
+**Double Rectangle:**
+
+```bash
+python text_to_dxf.py "World" output_double_rect.dxf --surround double_rectangle --padding 10 --gap 3 --corner-radius 5 --preview
+```
+
+**Rectangle with no rounded corners:**
+
+```bash
+python text_to_dxf.py "Test" output_sharp_rect.dxf --surround rectangle --padding 10 --corner-radius 0 --preview
+```
+
 ### All Options
 
 ```
@@ -88,6 +110,9 @@ usage: text_to_dxf.py [-h] [--list-fonts] [--font FONT] [--size SIZE]
                       [--spacing SPACING] [--quality {low,medium,high}]
                       [--kerning | --no-kerning] [-v] [--preview]
                       [--preview-file PREVIEW_FILE]
+                      [--surround {none,rectangle,double_rectangle}]
+                      [--padding PADDING] [--gap GAP]
+                      [--corner-radius CORNER_RADIUS]
                       [text] [output]
 
 Convert text to DXF font outlines
@@ -110,6 +135,14 @@ options:
   --preview             Preview the generated paths using matplotlib
   --preview-file PREVIEW_FILE
                         Save the matplotlib preview to a file
+
+Arguments for surrounding shape:
+  --surround {none,rectangle,double_rectangle}
+                        Surround the text with a shape (default: none)
+  --padding PADDING     Padding between text and surrounding shape in mm (default: 5.0)
+  --gap GAP             Gap between double rectangles in mm (default: 3.0)
+  --corner-radius CORNER_RADIUS
+                        Corner radius for surrounding rectangles in mm (default: 0.0)
 ```
 
 ## Requirements
