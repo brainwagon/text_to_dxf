@@ -1,3 +1,4 @@
 fonttools
 ezdxf
 tqdm
+matplotlib

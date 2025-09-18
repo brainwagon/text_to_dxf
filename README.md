@@ -51,6 +51,28 @@ You can control the font size (in mm) and character spacing:
 python text_to_dxf.py "Sized" sized.dxf --size 50 --spacing 1.5
 ```
 
+### Previewing the Output
+
+You can generate a preview of the text outlines using `matplotlib`.
+
+To display a preview on the screen without saving a DXF file:
+
+```bash
+python text_to_dxf.py "Preview" --preview
+```
+
+To save the preview to an image file:
+
+```bash
+python text_to_dxf.py "Save Preview" --preview-file preview.png
+```
+
+You can also use the preview flags in conjunction with generating a DXF file:
+
+```bash
+python text_to_dxf.py "Both" output.dxf --preview
+```
+
 ### Controlling Kerning
 
 Kerning is enabled by default to ensure proper character spacing for fonts that support it. You can disable it using the `--no-kerning` flag:
@@ -64,7 +86,8 @@ python text_to_dxf.py "AVATAR" avatar.dxf --font gunplay.ttf --no-kerning
 ```
 usage: text_to_dxf.py [-h] [--list-fonts] [--font FONT] [--size SIZE]
                       [--spacing SPACING] [--quality {low,medium,high}]
-                      [--kerning | --no-kerning] [-v]
+                      [--kerning | --no-kerning] [-v] [--preview]
+                      [--preview-file PREVIEW_FILE]
                       [text] [output]
 
 Convert text to DXF font outlines
@@ -78,12 +101,15 @@ options:
   --list-fonts          List all available system fonts and exit
   --font FONT           Font name to use (default: Arial) or path to font file
   --size SIZE           Font size in mm (default: 20)
-  --spacing SPACING     Character spacing multiplier (default: 1.2)
+  --spacing SPACING     Character spacing multiplier (default: 1.0)
   --quality {low,medium,high}
                         Curve quality: low, medium, or high (default: high)
   --kerning, --no-kerning
                         Enable/disable font kerning (default: --kerning)
   -v, --verbose         Enable verbose debug output
+  --preview             Preview the generated paths using matplotlib
+  --preview-file PREVIEW_FILE
+                        Save the matplotlib preview to a file
 ```
 
 ## Requirements
@@ -92,9 +118,16 @@ options:
 *   `fonttools`
 *   `ezdxf`
 *   `tqdm`
+*   `matplotlib`
 
 You can install the required libraries using pip:
 
 ```bash
-pip install fonttools ezdxf tqdm
+pip install -r requirements.txt
+```
+
+or
+
+```bash
+pip install fonttools ezdxf tqdm matplotlib
 ```

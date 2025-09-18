@@ -24,6 +24,7 @@ import ezdxf
 from ezdxf.math import Vec2
 import math
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 
 def get_system_font_paths():
@@ -527,6 +528,7 @@ def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_q
     x_offset, y_offset = 0, 0
     successful_chars = 0
     previous_glyph_name = None  # For kerning
+    all_paths = []
 
     space_advance = 0
     try:
@@ -593,6 +595,7 @@ def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_q
 
         pen.endPath()
         pen.draw_to_dxf()
+        all_paths.extend(pen.paths)
         successful_chars += 1
 
         x_advance = _get_char_advance(font, glyph_name, glyph_set, scale, spacing, font_size, char, verbose)
@@ -604,8 +607,9 @@ def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_q
         print(f"Processed {successful_chars} characters successfully")
 
     try:
-        doc.saveas(output_path)
-        print(f"DXF file saved successfully: {output_path}")
+        if output_path:
+            doc.saveas(output_path)
+            print(f"DXF file saved successfully: {output_path}")
         if verbose:
             print("Summary:")
             print(f"  Text: '{text}'")
@@ -620,7 +624,34 @@ def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_q
         font.close()
         if verbose:
             print("Font closed successfully")
+    return all_paths
 
+
+def preview_paths(paths, preview=False, preview_file=None):
+    """
+    Display or save a preview of the paths using matplotlib.
+    """
+    if not preview and not preview_file:
+        return
+
+    plt.figure()
+    for path in paths:
+        if len(path) > 1:
+            x, y = zip(*path)
+            plt.plot(x, y, color='black')
+    
+    plt.axis('equal')
+    plt.title('Font Outline Preview')
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.grid(True)
+
+    if preview_file:
+        plt.savefig(preview_file)
+        print(f"Preview saved to {preview_file}")
+
+    if preview:
+        plt.show()
 
 
 def main():
@@ -643,6 +674,10 @@ def main():
                         help='Enable/disable font kerning (default: --kerning)')
     parser.add_argument('-v', '--verbose', action='store_true',
                        help='Enable verbose debug output')
+    parser.add_argument('--preview', action='store_true',
+                          help='Preview the generated paths using matplotlib')
+    parser.add_argument('--preview-file', type=str,
+                          help='Save the matplotlib preview to a file')
     
     args = parser.parse_args()
     
@@ -654,8 +689,10 @@ def main():
     # Validate required arguments for text conversion
     if not args.text:
         parser.error('text argument is required (unless using --list-fonts)')
-    if not args.output:
-        parser.error('output argument is required (unless using --list-fonts)')
+    
+    # If preview is requested, output can be optional
+    if not args.output and not args.preview and not args.preview_file:
+        parser.error('output argument is required (unless using --preview or --preview-file)')
     
     # Determine font path
     font_path = None
@@ -684,7 +721,9 @@ def main():
     curve_quality = quality_map[args.quality]
     
     try:
-        text_to_dxf(font_path, args.text, args.output, args.size, args.spacing, curve_quality, args.verbose, args.kerning)
+        all_paths = text_to_dxf(font_path, args.text, args.output, args.size, args.spacing, curve_quality, args.verbose, args.kerning)
+        if args.preview or args.preview_file:
+            preview_paths(all_paths, args.preview, args.preview_file)
     except Exception as e:
         import traceback
         print(f"Error: {e}")
@@ -710,6 +749,10 @@ if __name__ == "__main__":
         print("\n  # Use a specific font file")
         print("  python text_to_dxf.py \"Hello World\" output.dxf --font arial.ttf")
         print("  python text_to_dxf.py \"Hello World\" output.dxf --font LoveDays.ttf --size 25 --verbose")
+        print("\n  # Preview the output without saving a DXF file")
+        print("  python text_to_dxf.py \"Hello World\" --preview")
+        print("\n  # Save the preview to a file")
+        print("  python text_to_dxf.py \"Hello World\" --preview-file preview.png")
         print("\nRun with --help for more options")
     else:
         main()
