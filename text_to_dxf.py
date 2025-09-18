@@ -424,8 +424,10 @@ def _get_char_advance(font, glyph_name, glyph_set, scale, spacing, font_size, ch
     try:
         if 'hmtx' in font:
             hmtx_table = font['hmtx']
-            if glyph_name in hmtx_table:
-                advance_width, _ = hmtx_table[glyph_name]
+            if verbose:
+                print(f"  hmtx table metrics keys: {list(hmtx_table.metrics.keys())[:10]}") # Print first 10 keys
+            if glyph_name in hmtx_table.metrics:
+                advance_width, _ = hmtx_table.metrics[glyph_name]
                 x_advance = (advance_width * scale) * spacing
                 if verbose:
                     print(f"  Advanced by {x_advance:.2f} (from hmtx table, width={advance_width})")
@@ -446,19 +448,12 @@ def _get_char_advance(font, glyph_name, glyph_set, scale, spacing, font_size, ch
             if verbose:
                 print(f"  Could not get width from glyph set: {e}")
 
-    # Method 3: Use character-specific fallbacks
+    # Method 3: Fallback to a default advance if other methods fail
     if x_advance is None:
-        char_spacing_map = {
-            'I': 0.3, 'i': 0.3, 'l': 0.3, '1': 0.4, 'j': 0.4, 'f': 0.4, 't': 0.4, 'r': 0.5,
-            'W': 1.2, 'M': 1.2, 'm': 1.0, 'w': 1.0, 'A': 0.8, 'B': 0.8, 'C': 0.8, 'D': 0.8,
-            'E': 0.7, 'F': 0.7, 'G': 0.8, 'H': 0.8, 'J': 0.6, 'K': 0.8, 'L': 0.7, 'N': 0.8,
-            'O': 0.8, 'P': 0.7, 'Q': 0.8, 'R': 0.8, 'S': 0.7, 'T': 0.7, 'U': 0.8, 'V': 0.8,
-            'X': 0.8, 'Y': 0.8, 'Z': 0.7,
-        }
-        char_multiplier = char_spacing_map.get(char, 0.7)
-        x_advance = font_size * char_multiplier * spacing
+        # Default to a generic advance based on font_size if no other metric is available
+        x_advance = (font_size * 0.5) * spacing  # A more generic fallback
         if verbose:
-            print(f"  Advanced by {x_advance:.2f} (character-specific fallback: {char_multiplier})")
+            print(f"  Advanced by {x_advance:.2f} (generic fallback)")
 
     return x_advance
 
@@ -512,7 +507,7 @@ def _get_kerning_adjustment(font, left_glyph, right_glyph, scale, verbose=False)
     return 0
 
 
-def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.2, curve_quality=0.5, verbose=False, kerning=True):
+def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_quality=0.5, verbose=False, kerning=True):
     """
     Convert text to DXF outlines using the specified font.
     """
@@ -533,14 +528,27 @@ def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.2, curve_q
     successful_chars = 0
     previous_glyph_name = None  # For kerning
 
+    space_advance = 0
+    try:
+        # Get advance width for space character from hmtx table
+        space_glyph_name = cmap.get(ord(' '))
+        if space_glyph_name and 'hmtx' in font:
+            space_advance, _ = font['hmtx'][space_glyph_name]
+            space_advance *= scale
+        else:
+            # Fallback for space if not in hmtx
+            space_advance = font_size * 0.4  # A more reasonable default
+    except Exception:
+        space_advance = font_size * 0.4 # Fallback
+
     if verbose:
-        print(f"Processing text: '{text}'")
+        print(f"Space advance width: {space_advance}")
 
     for char in tqdm(text, desc="Processing characters", disable=verbose):
         if char == ' ':
-            x_offset += font_size * 0.3  # Approximate space width
+            x_offset += space_advance  # Use calculated space advance
             if verbose:
-                print(f"  Space character, advancing by {font_size * 0.3}")
+                print(f"  Space character, advancing by {space_advance}")
             previous_glyph_name = None  # Reset for kerning
             continue
 
@@ -627,8 +635,8 @@ def main():
                        help='Font name to use (default: Arial) or path to font file')
     parser.add_argument('--size', type=float, default=20, 
                        help='Font size in mm (default: 20)')
-    parser.add_argument('--spacing', type=float, default=1.2,
-                       help='Character spacing multiplier (default: 1.2)')
+    parser.add_argument('--spacing', type=float, default=1.0,
+                       help='Character spacing multiplier (default: 1.0)')
     parser.add_argument('--quality', choices=['low', 'medium', 'high'], default='high',
                        help='Curve quality: low, medium, or high (default: high)')
     parser.add_argument('--kerning', action=argparse.BooleanOptionalAction, default=True,
