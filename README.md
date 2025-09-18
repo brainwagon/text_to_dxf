@@ -1,5 +1,7 @@
 # Text to DXF
 
+![Example of text with double rectangle border](preview_double_rect.png)
+
 A Python script to convert text into DXF vector outlines. This is useful for generating paths for CNC machines, laser cutters, or for use in CAD software.
 
 ## Features
