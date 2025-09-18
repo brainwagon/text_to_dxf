@@ -4,3 +4,7 @@
 
 # Ignore dxf files
 *.dxf
+
+# Ignore image files too
+*.png
+*.jpg
