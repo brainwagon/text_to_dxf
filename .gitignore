@@ -1,0 +1,6 @@
+# Ignore font files
+*.ttf
+*.otf
+
+# Ignore dxf files
+*.dxf
