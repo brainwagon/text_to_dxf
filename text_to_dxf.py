@@ -332,11 +332,11 @@ def find_font_by_name(font_name):
         return None
 
 
-def _load_font_and_get_scale(font_path, font_size, verbose=False):
+def _load_font_and_get_scale(font_path, font_size, font_index, verbose=False):
     if verbose:
         print(f"Loading font: {font_path}")
     try:
-        font = TTFont(font_path)
+        font = TTFont(font_path, fontNumber=font_index)
         if verbose:
             print("Font loaded successfully")
     except Exception as e:
@@ -604,11 +604,11 @@ def generate_surrounding_shape(min_x, min_y, max_x, max_y, surround, padding, ga
     return paths
 
 
-def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_quality=0.5, verbose=False, kerning=True, surround='none', padding=5.0, gap=3.0, corner_radius=0.0):
+def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_quality=0.5, verbose=False, kerning=True, surround='none', padding=5.0, gap=3.0, corner_radius=0.0, font_index=0):
     """
     Convert text to DXF outlines using the specified font.
     """
-    font, scale = _load_font_and_get_scale(font_path, font_size, verbose)
+    font, scale = _load_font_and_get_scale(font_path, font_size, font_index, verbose)
     doc, msp = _setup_dxf_document(verbose)
     glyph_set, cmap = _get_font_tables(font, verbose)
 
@@ -792,6 +792,8 @@ def main():
     parser.add_argument('output', nargs='?', help='Output DXF file path')
     parser.add_argument('--font', type=str, default='Arial',
                        help='Font name to use (default: Arial) or path to font file')
+    parser.add_argument('--font-index', type=int, default=0,
+                       help='For .ttc font collections, specify the font index to use (default: 0)')
     parser.add_argument('--size', type=float, default=20, 
                        help='Font size in mm (default: 20)')
     parser.add_argument('--spacing', type=float, default=1.0,
@@ -859,7 +861,7 @@ def main():
     curve_quality = quality_map[args.quality]
     
     try:
-        all_paths, surrounding_paths = text_to_dxf(font_path, args.text, args.output, args.size, args.spacing, curve_quality, args.verbose, args.kerning, args.surround, args.padding, args.gap, args.corner_radius)
+        all_paths, surrounding_paths = text_to_dxf(font_path, args.text, args.output, args.size, args.spacing, curve_quality, args.verbose, args.kerning, args.surround, args.padding, args.gap, args.corner_radius, args.font_index)
         if args.preview or args.preview_file:
             preview_paths(all_paths, surrounding_paths, args.preview, args.preview_file)
     except Exception as e:
