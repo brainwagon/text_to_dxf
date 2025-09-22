@@ -15,10 +15,24 @@ A Python script to convert text into DXF vector outlines. This is useful for gen
 
 ### Listing available fonts
 
-To see a list of fonts available on your system:
+To see a list of all fonts available on your system:
 
 ```bash
 python text_to_dxf.py --list-fonts
+```
+
+### Listing Common Fonts
+
+To see a list of common Adobe, Ubuntu, and Microsoft fonts found on your system. This command will list all available variants (e.g., Regular, Italic, Bold) of these common fonts, while excluding Noto fonts.
+
+```bash
+python text_to_dxf.py --list-common-fonts
+```
+
+Use the `--verbose` flag with `--list-common-fonts` to also display the full path for each font:
+
+```bash
+python text_to_dxf.py --list-common-fonts --verbose
 ```
 
 ### Basic Conversion
@@ -116,7 +130,7 @@ python text_to_dxf.py "Test" -o output_sharp_rect.dxf --surround rectangle --pad
 ### All Options
 
 ```
-usage: text_to_dxf.py [-h] [--list-fonts] [--font FONT] [--font-index FONT_INDEX]
+usage: text_to_dxf.py [-h] [--list-fonts] [--list-common-fonts] [--font FONT] [--font-index FONT_INDEX]
                       [--size SIZE] [--spacing SPACING] [--quality {low,medium,high}]
                       [--kerning | --no-kerning] [-v] [--preview]
                       [--preview-file PREVIEW_FILE] [-o OUTPUT]
@@ -128,7 +142,7 @@ usage: text_to_dxf.py [-h] [--list-fonts] [--font FONT] [--font-index FONT_INDEX
 Convert text to DXF font outlines
 
 positional arguments:
-  text                  Text string(s) to convert. Each argument represents a new line.
+  text                  Text string(s) to convert. Each argument represents a new line. This argument is optional when using `--list-fonts` or `--list-common-fonts`.
 
 options:
   -h, --help            show this help message and exit

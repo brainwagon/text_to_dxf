@@ -126,7 +126,47 @@ def list_fonts():
         print(f"    Path: {font_path}")
         print()
 
-
+def list_common_fonts(args):
+    """List common Adobe, Ubuntu, and Microsoft fonts found on the system."""
+    common_font_names = [
+        # Adobe
+        "Adobe Garamond", "Myriad Pro", "Minion Pro", "Source Sans Pro", "Source Serif Pro", "Source Code Pro",
+        # Microsoft
+        "Arial", "Times New Roman", "Courier New", "Verdana", "Tahoma", "Georgia", "Impact", "Trebuchet MS",
+        "Comic Sans MS", "Calibri", "Cambria", "Consolas", "Corbel", "Candara", "Segoe UI",
+        # Ubuntu
+        "Ubuntu", "Ubuntu Mono", "Ubuntu Condensed", "Ubuntu Light",
+        # Common cross-platform (often included with OS or popular software)
+        "Helvetica", "sans-serif", "serif", "monospace", "DejaVu Sans", "Liberation Sans", "Noto Sans"
+    ]
+    
+    print("Searching for common fonts...")
+    all_fonts = find_all_fonts()
+    
+    found_common_fonts = {}
+    for font_display_name, font_path in all_fonts.items():
+        if font_display_name.lower().startswith("noto"): # Exclude Noto fonts
+            continue
+        for common_name in common_font_names:
+            # Check if the font_display_name starts with the common_name or contains it with a space/hyphen
+            if font_display_name.lower().startswith(common_name.lower()) or \
+               f" {common_name.lower()}" in font_display_name.lower() or \
+               f"-{common_name.lower()}" in font_display_name.lower():
+                found_common_fonts[font_display_name] = font_path
+                break # Found a match for this font_display_name, move to next available font
+    
+    if not found_common_fonts:
+        print("No common fonts found on the system.")
+        return
+    
+    print(f"\nFound {len(found_common_fonts)} common fonts:\n")
+    
+    for font_name in sorted(found_common_fonts.keys()):
+        font_path = found_common_fonts[font_name]
+        print(f"  {font_name}")
+        if args.verbose:
+            print(f"    Path: {font_path}")
+            print()
 
 
 class DXFPen(BasePen):
@@ -850,7 +890,9 @@ def main():
     
     parser.add_argument('--list-fonts', action='store_true',
                        help='List all available system fonts and exit')
-    parser.add_argument('text', nargs='+', help='Text string(s) to convert. Each argument represents a new line.')
+    parser.add_argument('--list-common-fonts', action='store_true',
+                       help='List common Adobe, Ubuntu, and Microsoft fonts and exit')
+    parser.add_argument('text', nargs='*', help='Text string(s) to convert. Each argument represents a new line.')
     parser.add_argument('-o', '--output', type=str, default='output.dxf',
                        help='Output DXF file path (default: output.dxf)')
     parser.add_argument('--line-spacing', type=float, default=1.5,
@@ -891,9 +933,13 @@ def main():
         list_fonts()
         return
     
+    if args.list_common_fonts:
+        list_common_fonts(args)
+        return
+    
     # Validate required arguments for text conversion
-    if not args.text:
-        parser.error('text argument is required (unless using --list-fonts)')
+    if not args.text and not args.list_fonts and not args.list_common_fonts:
+        parser.error('text argument is required (unless using --list-fonts or --list-common-fonts)')
     
 
     
