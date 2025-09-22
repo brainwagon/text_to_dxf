@@ -604,7 +604,58 @@ def generate_surrounding_shape(min_x, min_y, max_x, max_y, surround, padding, ga
     return paths
 
 
-def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_quality=0.5, verbose=False, kerning=True, surround='none', padding=5.0, gap=3.0, corner_radius=0.0, font_index=0):
+def _calculate_line_width(font, line_text, glyph_set, cmap, scale, spacing, font_size, kerning, is_symbol_font, verbose=False):
+    """
+    Calculates the total width of a single line of text, considering font metrics, spacing, and kerning.
+    """
+    current_x = 0
+    previous_glyph_name = None
+
+    space_advance = 0
+    try:
+        space_glyph_name = cmap.get(ord(' '))
+        if space_glyph_name and 'hmtx' in font:
+            space_advance, _ = font['hmtx'][space_glyph_name]
+            space_advance *= scale
+        else:
+            space_advance = font_size * 0.4
+    except Exception:
+        space_advance = font_size * 0.4
+
+    for char in line_text:
+        if char == ' ':
+            current_x += space_advance
+            previous_glyph_name = None
+            continue
+
+        char_code = ord(char)
+        if is_symbol_font:
+            if char_code <= 255:
+                char_code += 0xF000
+
+        if char_code not in cmap:
+            previous_glyph_name = None
+            continue
+
+        glyph_name = cmap[char_code]
+
+        if kerning and previous_glyph_name:
+            adjustment = _get_kerning_adjustment(font, previous_glyph_name, glyph_name, scale, verbose)
+            current_x += adjustment
+
+        try:
+            glyph = glyph_set[glyph_name]
+        except KeyError:
+            previous_glyph_name = None
+            continue
+
+        x_advance = _get_char_advance(font, glyph_name, glyph_set, scale, spacing, font_size, char, verbose)
+        current_x += x_advance
+        previous_glyph_name = glyph_name
+    return current_x
+
+
+def text_to_dxf(font_path, lines_of_text, output_path, font_size=20, spacing=1.0, curve_quality=0.5, verbose=False, kerning=True, surround='none', padding=5.0, gap=3.0, corner_radius=0.0, font_index=0, line_spacing=1.5):
     """
     Convert text to DXF outlines using the specified font.
     """
@@ -612,7 +663,6 @@ def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_q
     doc, msp = _setup_dxf_document(verbose)
     glyph_set, cmap = _get_font_tables(font, verbose)
 
-    # Check if this is a symbol font by looking at the cmap keys
     is_symbol_font = False
     if cmap and cmap.keys():
         min_code = min(cmap.keys())
@@ -621,84 +671,96 @@ def text_to_dxf(font_path, text, output_path, font_size=20, spacing=1.0, curve_q
             if verbose:
                 print("Detected a Symbol font based on character codes in the PUA range.")
 
-    x_offset, y_offset = 0, 0
-    successful_chars = 0
-    previous_glyph_name = None  # For kerning
-    all_paths = []
-    surrounding_paths = []
-
-    space_advance = 0
+    space_advance = font_size * 0.4 # Default fallback
     try:
         # Get advance width for space character from hmtx table
         space_glyph_name = cmap.get(ord(' '))
         if space_glyph_name and 'hmtx' in font:
             space_advance, _ = font['hmtx'][space_glyph_name]
             space_advance *= scale
-        else:
-            # Fallback for space if not in hmtx
-            space_advance = font_size * 0.4  # A more reasonable default
     except Exception:
-        space_advance = font_size * 0.4 # Fallback
+        pass # Keep fallback value
 
     if verbose:
         print(f"Space advance width: {space_advance}")
+    # First Pass: Calculate widths of all lines
+    line_widths = []
+    for line_text in lines_of_text:
+        line_width = _calculate_line_width(font, line_text, glyph_set, cmap, scale, spacing, font_size, kerning, is_symbol_font, verbose)
+        line_widths.append(line_width)
+    
+    max_line_width = max(line_widths) if line_widths else 0
 
-    for char in tqdm(text, desc="Processing characters", disable=verbose):
-        if char == ' ':
-            x_offset += space_advance  # Use calculated space advance
-            if verbose:
-                print(f"  Space character, advancing by {space_advance}")
-            previous_glyph_name = None  # Reset for kerning
-            continue
+    # Calculate total text height and initial y_offset for vertical centering
+    line_height = font_size * line_spacing
+    total_text_height = len(lines_of_text) * line_height - (line_height - font_size) # Adjust for last line not having extra spacing
+    
+    # Center the entire block of text vertically around y=0
+    current_y_offset = -total_text_height / 2 + font_size / 2 # Start from the baseline of the top line
 
-        char_code = ord(char)
-        if is_symbol_font:
-            # For symbol fonts, map ASCII to the PUA range
-            if char_code <= 255: # Assuming ASCII input
-                char_code += 0xF000
-            if verbose:
-                print(f"  Mapping character '{char}' to PUA code {char_code}")
-
-        if char_code not in cmap:
-            if verbose:
-                print(f"  Warning: Character '{char}' (code: {char_code}) not found in font, skipping")
-            previous_glyph_name = None  # Reset for kerning
-            continue
-
-        glyph_name = cmap[char_code]
-        if verbose:
-            print(f"  Glyph name: {glyph_name}")
-
-        # Apply kerning adjustment
-        if kerning and previous_glyph_name:
-            adjustment = _get_kerning_adjustment(font, previous_glyph_name, glyph_name, scale, verbose)
-            x_offset += adjustment
-
-        try:
-            glyph = glyph_set[glyph_name]
-        except KeyError:
-            if verbose:
-                print(f"  Warning: Glyph '{glyph_name}' not found in font, skipping")
-            previous_glyph_name = None  # Reset for kerning
-            continue
-
-        pen = DXFPen(msp, x_offset, y_offset, scale, curve_quality)
-        try:
-            glyph.draw(pen)
-        except Exception as e:
-            if verbose:
-                print(f"  Warning: Could not draw glyph '{glyph_name}': {e}")
-            continue
-
-        pen.endPath()
-        pen.draw_to_dxf()
-        all_paths.extend(pen.paths)
-        successful_chars += 1
-
-        x_advance = _get_char_advance(font, glyph_name, glyph_set, scale, spacing, font_size, char, verbose)
-        x_offset += x_advance
+    all_paths = []
+    surrounding_paths = []
+    successful_chars = 0
+    
+    # Second Pass: Draw each line
+    for line_idx, line_text in enumerate(lines_of_text):
+        line_width = line_widths[line_idx]
         
-        previous_glyph_name = glyph_name  # Update for next iteration
+        # Calculate x_offset to center the current line
+        x_offset = -line_width / 2 # Center each line horizontally
+        
+        previous_glyph_name = None  # Reset for kerning for each new line
+
+        for char in tqdm(line_text, desc=f"Processing line {line_idx + 1}/{len(lines_of_text)}", leave=False, disable=not verbose):
+            if char == ' ':
+                x_offset += space_advance
+                previous_glyph_name = None
+                continue
+
+            char_code = ord(char)
+            if is_symbol_font:
+                if char_code <= 255:
+                    char_code += 0xF000
+
+            if char_code not in cmap:
+                if verbose:
+                    print(f"  Warning: Character '{char}' (code: {char_code}) not found in font, skipping")
+                previous_glyph_name = None
+                continue
+
+            glyph_name = cmap[char_code]
+
+            if kerning and previous_glyph_name:
+                adjustment = _get_kerning_adjustment(font, previous_glyph_name, glyph_name, scale, verbose)
+                x_offset += adjustment
+
+            try:
+                glyph = glyph_set[glyph_name]
+            except KeyError:
+                if verbose:
+                    print(f"  Warning: Glyph '{glyph_name}' not found in font, skipping")
+                previous_glyph_name = None
+                continue
+
+            pen = DXFPen(msp, x_offset, current_y_offset, scale, curve_quality)
+            try:
+                glyph.draw(pen)
+            except Exception as e:
+                if verbose:
+                    print(f"  Warning: Could not draw glyph '{glyph_name}': {e}")
+                continue
+
+            pen.endPath()
+            pen.draw_to_dxf()
+            all_paths.extend(pen.paths)
+            successful_chars += 1
+
+            x_advance = _get_char_advance(font, glyph_name, glyph_set, scale, spacing, font_size, char, verbose)
+            x_offset += x_advance
+            
+            previous_glyph_name = glyph_name
+        
+        current_y_offset -= line_height # Move down for the next line
 
     if verbose:
         print(f"Processed {successful_chars} characters successfully")
@@ -788,8 +850,11 @@ def main():
     
     parser.add_argument('--list-fonts', action='store_true',
                        help='List all available system fonts and exit')
-    parser.add_argument('text', nargs='?', help='Text string to convert')
-    parser.add_argument('output', nargs='?', help='Output DXF file path')
+    parser.add_argument('text', nargs='+', help='Text string(s) to convert. Each argument represents a new line.')
+    parser.add_argument('-o', '--output', type=str, default='output.dxf',
+                       help='Output DXF file path (default: output.dxf)')
+    parser.add_argument('--line-spacing', type=float, default=1.5,
+                       help='Multiplier for vertical spacing between lines (default: 1.5)')
     parser.add_argument('--font', type=str, default='Arial',
                        help='Font name to use (default: Arial) or path to font file')
     parser.add_argument('--font-index', type=int, default=0,
@@ -830,9 +895,7 @@ def main():
     if not args.text:
         parser.error('text argument is required (unless using --list-fonts)')
     
-    # If preview is requested, output can be optional
-    if not args.output and not args.preview and not args.preview_file:
-        parser.error('output argument is required (unless using --preview or --preview-file)')
+
     
     # Determine font path
     font_path = None
@@ -861,7 +924,7 @@ def main():
     curve_quality = quality_map[args.quality]
     
     try:
-        all_paths, surrounding_paths = text_to_dxf(font_path, args.text, args.output, args.size, args.spacing, curve_quality, args.verbose, args.kerning, args.surround, args.padding, args.gap, args.corner_radius, args.font_index)
+        all_paths, surrounding_paths = text_to_dxf(font_path, args.text, args.output, args.size, args.spacing, curve_quality, args.verbose, args.kerning, args.surround, args.padding, args.gap, args.corner_radius, args.font_index, args.line_spacing)
         if args.preview or args.preview_file:
             preview_paths(all_paths, surrounding_paths, args.preview, args.preview_file)
     except Exception as e:
@@ -880,15 +943,17 @@ if __name__ == "__main__":
         print("  # List all available fonts")
         print("  python text_to_dxf.py --list-fonts")
         print("\n  # Basic usage (uses Arial by default)")
-        print("  python text_to_dxf.py \"Hello World\" output.dxf")
+        print("  python text_to_dxf.py \"Hello World\" -o output.dxf")
+        print("\n  # Multi-line text")
+        print("  python text_to_dxf.py \"Hello\" \"World\" -o multi_line.dxf --line-spacing 1.2")
         print("\n  # Disable kerning")
-        print("  python text_to_dxf.py \"Hello World\" output.dxf --no-kerning")
+        print("  python text_to_dxf.py \"Hello World\" -o output.dxf --no-kerning")
         print("\n  # Use different system fonts")
-        print("  python text_to_dxf.py \"Hello World\" output.dxf --font \"Times New Roman\"")
-        print("  python text_to_dxf.py \"Hello World\" output.dxf --font \"Helvetica\" --size 15")
+        print("  python text_to_dxf.py \"Hello World\" -o output.dxf --font \"Times New Roman\"")
+        print("  python text_to_dxf.py \"Hello World\" -o output.dxf --font \"Helvetica\" --size 15")
         print("\n  # Use a specific font file")
-        print("  python text_to_dxf.py \"Hello World\" output.dxf --font arial.ttf")
-        print("  python text_to_dxf.py \"Hello World\" output.dxf --font LoveDays.ttf --size 25 --verbose")
+        print("  python text_to_dxf.py \"Hello World\" -o output.dxf --font arial.ttf")
+        print("  python text_to_dxf.py \"Hello World\" -o output.dxf --font LoveDays.ttf --size 25 --verbose")
         print("\n  # Preview the output without saving a DXF file")
         print("  python text_to_dxf.py \"Hello World\" --preview")
         print("\n  # Save the preview to a file")
