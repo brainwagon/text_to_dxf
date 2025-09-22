@@ -107,7 +107,7 @@ python text_to_dxf.py "AVATAR" -o avatar.dxf --font gunplay.ttf --no-kerning
 
 ### Surrounding Text with Shapes
 
-You can add a surrounding rectangular shape around the text with customizable padding, gap, and corner radius.
+You can add a surrounding shape around the text with customizable padding, gap, and corner radius.
 
 **Simple Rectangle:**
 
@@ -119,6 +119,18 @@ python text_to_dxf.py "Hello" -o output_rect.dxf --surround rectangle --padding 
 
 ```bash
 python text_to_dxf.py "World" -o output_double_rect.dxf --surround double_rectangle --padding 10 --gap 3 --corner-radius 5 --preview
+```
+
+**Simple Oval:**
+
+```bash
+python text_to_dxf.py "Oval" -o output_oval.dxf --surround oval --padding 10 --preview
+```
+
+**Double Oval:**
+
+```bash
+python text_to_dxf.py "Double Oval" -o output_double_oval.dxf --surround double_oval --padding 10 --gap 3 --preview
 ```
 
 **Rectangle with no rounded corners:**
@@ -166,7 +178,7 @@ options:
                         Multiplier for vertical spacing between lines (default: 1.5)
 
 Arguments for surrounding shape:
-  --surround {none,rectangle,double_rectangle}
+  --surround {none,rectangle,double_rectangle,oval,double_oval}
                         Surround the text with a shape (default: none)
   --padding PADDING     Padding between text and surrounding shape in mm (default: 5.0)
   --gap GAP             Gap between double rectangles in mm (default: 3.0)

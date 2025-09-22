@@ -548,14 +548,54 @@ def _get_kerning_adjustment(font, left_glyph, right_glyph, scale, verbose=False)
     return 0
 
 
-def generate_surrounding_shape(min_x, min_y, max_x, max_y, surround, padding, gap, corner_radius, verbose=False):
+def add_oval(msp, min_x, min_y, max_x, max_y, offset, verbose=False):
+    center_x = (min_x + max_x) / 2
+    center_y = (min_y + max_y) / 2
+    width = max_x - min_x
+    height = max_y - min_y
+
+    x_radius = (width / 2) + offset
+    y_radius = (height / 2) + offset
+
+    if verbose:
+        print(f"  add_oval: min_x={min_x:.2f}, min_y={min_y:.2f}, max_x={max_x:.2f}, max_y={max_y:.2f}, offset={offset:.2f}")
+        print(f"  add_oval: center=({center_x:.2f}, {center_y:.2f}), x_radius={x_radius:.2f}, y_radius={y_radius:.2f}")
+
+    center = (center_x, center_y)
+
+    if x_radius <= 0 or y_radius <= 0:
+        if verbose:
+            print("  add_oval: Skipping oval creation due to non-positive radius.")
+        return
+
+    if x_radius >= y_radius:
+        major_axis = (x_radius, 0)
+        ratio = y_radius / x_radius
+    else:
+        major_axis = (0, y_radius)
+        ratio = x_radius / y_radius
+    
+    ellipse_entity = msp.add_ellipse(center, major_axis, ratio)
+    ellipse_entity.dxf.layer = "SURROUND"
+    if verbose:
+        print(f"  add_oval: Added ELLIPSE entity to msp. Layer: {ellipse_entity.dxf.layer}")
+
+def add_double_oval(msp, min_x, min_y, max_x, max_y, offset, verbose=False):
+    if verbose:
+        print(f"  add_double_oval: Creating outer oval with offset={offset:.2f}")
+    # Outer oval
+    add_oval(msp, min_x, min_y, max_x, max_y, offset, verbose)
+    if verbose:
+        print(f"  add_double_oval: Creating inner oval with offset={-offset:.2f}")
+    # Inner oval
+    add_oval(msp, min_x, min_y, max_x, max_y, -offset, verbose)
+
+def generate_surrounding_shape(msp, min_x, min_y, max_x, max_y, surround, padding, gap, corner_radius, verbose=False):
     """
     Generate paths for the surrounding shape.
     """
-    paths = []
-    
     if surround == 'none':
-        return paths
+        return
 
     # Apply padding
     min_x -= padding
@@ -567,11 +607,13 @@ def generate_surrounding_shape(min_x, min_y, max_x, max_y, surround, padding, ga
         print(f"Generating surrounding shape: {surround}")
         print(f"Padding: {padding}, Gap: {gap}, Corner Radius: {corner_radius}")
 
-    def create_rounded_rect(min_x, min_y, max_x, max_y, radius):
-        """Create a single rounded rectangle path."""
+    def create_rounded_rect(msp, min_x, min_y, max_x, max_y, radius):
+        """Create a single rounded rectangle path and add it to msp."""
         if radius == 0:
             # Simple rectangle
-            return [[(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y), (min_x, min_y)]]
+            points = [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y), (min_x, min_y)]
+            msp.add_lwpolyline(points, close=True).dxf.layer = "SURROUND"
+            return
 
         # Ensure radius is not larger than half the shortest side
         radius = min(radius, (max_x - min_x) / 2, (max_y - min_y) / 2)
@@ -611,7 +653,7 @@ def generate_surrounding_shape(min_x, min_y, max_x, max_y, surround, padding, ga
 
         # Close the path by appending the first point
         path.append(path[0])
-        return [path]
+        msp.add_lwpolyline(path, close=True).dxf.layer = "SURROUND"
 
     def arc_points(center, radius, start_angle, end_angle, segments=16, reverse=False):
         """Generate points for an arc."""
@@ -626,10 +668,10 @@ def generate_surrounding_shape(min_x, min_y, max_x, max_y, surround, padding, ga
             points.append((x, y))
         return points
 
-    if surround == 'rectangle' or surround == 'double_rectangle':
-        paths.extend(create_rounded_rect(min_x, min_y, max_x, max_y, corner_radius))
-
-    if surround == 'double_rectangle':
+    if surround == 'rectangle':
+        create_rounded_rect(msp, min_x, min_y, max_x, max_y, corner_radius)
+    elif surround == 'double_rectangle':
+        create_rounded_rect(msp, min_x, min_y, max_x, max_y, corner_radius)
         # Second rectangle with gap
         min_x_inner = min_x + gap
         min_y_inner = min_y + gap
@@ -639,9 +681,13 @@ def generate_surrounding_shape(min_x, min_y, max_x, max_y, surround, padding, ga
         # Adjust corner radius for inner rectangle
         inner_radius = max(0, corner_radius - gap)
         
-        paths.extend(create_rounded_rect(min_x_inner, min_y_inner, max_x_inner, max_y_inner, inner_radius))
+        create_rounded_rect(msp, min_x_inner, min_y_inner, max_x_inner, max_y_inner, inner_radius)
+    elif surround == 'oval':
+        add_oval(msp, min_x, min_y, max_x, max_y, 0, verbose) # Offset 0 for single oval
+    elif surround == 'double_oval':
+        add_double_oval(msp, min_x, min_y, max_x, max_y, gap, verbose)
 
-    return paths
+    return
 
 
 def _calculate_line_width(font, line_text, glyph_set, cmap, scale, spacing, font_size, kerning, is_symbol_font, verbose=False):
@@ -820,11 +866,7 @@ def text_to_dxf(font_path, lines_of_text, output_path, font_size=20, spacing=1.0
             print(f"Text bounding box: ({min_x:.2f}, {min_y:.2f}) to ({max_x:.2f}, {max_y:.2f})")
 
         # Generate surrounding shape
-        surrounding_paths = generate_surrounding_shape(min_x, min_y, max_x, max_y, surround, padding, gap, corner_radius, verbose)
-        for path in surrounding_paths:
-            if len(path) > 1:
-                polyline = msp.add_lwpolyline(path, close=True)
-                polyline.dxf.layer = "SURROUND"
+        generate_surrounding_shape(msp, min_x, min_y, max_x, max_y, surround, padding, gap, corner_radius, verbose)
 
     try:
         if output_path:
@@ -836,22 +878,22 @@ def text_to_dxf(font_path, lines_of_text, output_path, font_size=20, spacing=1.0
             print(f"DXF file saved successfully: {output_path}")
         if verbose:
             print("Summary:")
-            print(f"  Text: '{text}'")
+            print(f"  Text: '{' '.join(lines_of_text)}'")
             print(f"  Font: {font_path}")
             print(f"  Font size: {font_size}mm")
             print(f"  Character spacing: {spacing}")
             print(f"  Kerning enabled: {kerning}")
-            print(f"  Characters processed: {successful_chars}/{len([c for c in text if c != ' '])}")
+            print(f"  Characters processed: {successful_chars}/{len([c for line in lines_of_text for c in line if c != ' '])}")
     except Exception as e:
         raise RuntimeError(f"Could not save DXF file '{output_path}': {e}")
     finally:
         font.close()
         if verbose:
             print("Font closed successfully")
-    return all_paths, surrounding_paths
+    return all_paths, msp
 
 
-def preview_paths(text_paths, surrounding_paths=None, preview=False, preview_file=None):
+def preview_paths(text_paths, msp=None, preview=False, preview_file=None, verbose=False):
     """
     Display or save a preview of the paths using matplotlib.
     """
@@ -864,8 +906,50 @@ def preview_paths(text_paths, surrounding_paths=None, preview=False, preview_fil
             x, y = zip(*path)
             plt.plot(x, y, color='black', linewidth=1.5, label='Text Outlines')
 
-    if surrounding_paths:
-        for path in surrounding_paths:
+    if msp:
+        surrounding_paths_for_preview = []
+        for entity in msp:
+            if verbose:
+                print(f"  preview_paths: Checking entity type: {entity.dxftype()}, Layer: {entity.dxf.layer}")
+            if entity.dxf.layer == "SURROUND":
+                if entity.dxftype() == 'LWPOLYLINE':
+                    # Use entity.vertices() for LWPOLYLINE, points are (x, y) tuples
+                    points_list = [(x, y) for x, y in entity.vertices()]
+                    surrounding_paths_for_preview.append(points_list)
+                elif entity.dxftype() == 'ELLIPSE':
+                    if verbose:
+                        print(f"  preview_paths: Found ELLIPSE on layer {entity.dxf.layer}")
+                        print(f"  preview_paths:   Center: {entity.dxf.center}, Major Axis: {entity.dxf.major_axis}, Ratio: {entity.dxf.ratio}")
+                        print(f"  preview_paths:   Start Param: {entity.dxf.start_param}, End Param: {entity.dxf.end_param}")
+
+                    # Approximate ellipse with a polyline for preview
+                    center = entity.dxf.center
+                    major_axis_vec = entity.dxf.major_axis
+                    ratio = entity.dxf.ratio
+                    start_param = entity.dxf.start_param
+                    end_param = entity.dxf.end_param
+
+                    major_radius = major_axis_vec.magnitude
+                    minor_radius = major_radius * ratio
+                    rotation = major_axis_vec.angle # Angle of major axis with x-axis
+
+                    num_segments = 100
+                    ellipse_points = []
+                    for i in range(num_segments + 1):
+                        angle_param = start_param + (end_param - start_param) * i / num_segments
+                        
+                        # Point on unrotated ellipse
+                        x_unrotated = major_radius * math.cos(angle_param)
+                        y_unrotated = minor_radius * math.sin(angle_param)
+                        
+                        # Rotate and translate
+                        x = center.x + x_unrotated * math.cos(rotation) - y_unrotated * math.sin(rotation)
+                        y = center.y + x_unrotated * math.sin(rotation) + y_unrotated * math.cos(rotation)
+                        
+                        ellipse_points.append((x, y))
+                    surrounding_paths_for_preview.append(ellipse_points)
+        
+        for path in surrounding_paths_for_preview:
             if len(path) > 1:
                 x, y = zip(*path)
                 plt.plot(x, y, color='blue', linestyle='--', linewidth=1.0, label='Surrounding Shape')
@@ -917,7 +1001,7 @@ def main():
                           help='Save the matplotlib preview to a file')
 
     # Arguments for surrounding shape
-    parser.add_argument('--surround', type=str, choices=['none', 'rectangle', 'double_rectangle'], default='none',
+    parser.add_argument('--surround', type=str, choices=['none', 'rectangle', 'double_rectangle', 'oval', 'double_oval'], default='none',
                        help='Surround the text with a shape (default: none)')
     parser.add_argument('--padding', type=float, default=5.0,
                        help='Padding between text and surrounding shape in mm (default: 5.0)')
@@ -970,9 +1054,9 @@ def main():
     curve_quality = quality_map[args.quality]
     
     try:
-        all_paths, surrounding_paths = text_to_dxf(font_path, args.text, args.output, args.size, args.spacing, curve_quality, args.verbose, args.kerning, args.surround, args.padding, args.gap, args.corner_radius, args.font_index, args.line_spacing)
+        all_paths, msp = text_to_dxf(font_path, args.text, args.output, args.size, args.spacing, curve_quality, args.verbose, args.kerning, args.surround, args.padding, args.gap, args.corner_radius, args.font_index, args.line_spacing)
         if args.preview or args.preview_file:
-            preview_paths(all_paths, surrounding_paths, args.preview, args.preview_file)
+            preview_paths(all_paths, msp, args.preview, args.preview_file, args.verbose)
     except Exception as e:
         import traceback
         print(f"Error: {e}")
